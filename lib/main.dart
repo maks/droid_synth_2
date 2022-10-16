@@ -1,10 +1,16 @@
-// ignore_for_file: avoid_print
+import 'package:bonsai/bonsai.dart';
+import 'package:droid_synth_2/midi_device_handler.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_midi_command/flutter_midi_command.dart';
 
 import 'package:flutter_virtual_piano/flutter_virtual_piano.dart';
 import 'package:msfa_plugin/msfa_plugin.dart';
 
 void main() {
+  if (kDebugMode) {
+    Log.init();
+  }
   runApp(const MyApp());
 }
 
@@ -17,19 +23,25 @@ class MyApp extends StatefulWidget {
 
 class MyAppState extends State<MyApp> {
   late MSFAPlugin plugin;
+  late final Future midiInitCompleted;
+  final MidiCommand midiCommand = MidiCommand();
+  late final midi = DeviceHandler(midiCommand);
 
   @override
   void initState() {
     super.initState();
     plugin = MSFAPlugin();
+    log("MIDI init...");
+    midiInitCompleted = midi.connectDevice();
   }
 
   @override
   void reassemble() {
     super.reassemble();
-    print("reassembling state...");
+    log("reassembling state...");
     plugin.shutDown();
     plugin = MSFAPlugin();
+    midi.disconnect();
   }
 
   @override
@@ -38,7 +50,7 @@ class MyAppState extends State<MyApp> {
   }
 
   void sendNoteOn(int noteNumber, int velocity) {
-    print("send note on: $noteNumber");
+    log("send note on: $noteNumber");
     // Midi messages: [Status, NoteNumber, Velocity]
     // where status is 0x90-0x9F and the low nibble is the channel number 0-15
     // ref: http://midi.teragonaudio.com/tech/midispec/noteon.htm
@@ -46,59 +58,80 @@ class MyAppState extends State<MyApp> {
   }
 
   void sendNoteOff(int noteNumber) {
-    print("send note off: $noteNumber");
+    log("send note off: $noteNumber");
     plugin.sendMidi([0x80, noteNumber, 0x00]);
   }
 
   @override
   Widget build(BuildContext context) {
-    const textStyle = TextStyle(fontSize: 25);
+    const textStyle = TextStyle(fontSize: 14);
     const spacerSmall = SizedBox(height: 10);
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('Native Packages'),
+          title: const Text('Droid Synth'),
         ),
-        body: SingleChildScrollView(
-          child: Container(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              children: [
-                spacerSmall,
-                FutureBuilder<bool>(
-                  future: plugin.init(),
-                  builder: (BuildContext context, AsyncSnapshot<bool> value) {
-                    final displayValue = (value.hasData) ? (value.data == true ? "completed" : "failed") : 'loading...';
-                    return Text(
-                      'MSFA Engine Init: $displayValue',
-                      style: textStyle,
-                      textAlign: TextAlign.center,
-                    );
-                  },
-                ),
-                MaterialButton(
-                  child: const Text("shutdown"),
-                  onPressed: () async {
-                    print("shutdown engine");
-                    plugin.shutDown();
-                  },
-                ),
-                SizedBox(
-                  height: 120,
-                  child: VirtualPiano(
-                    noteRange: const RangeValues(52, 71),
-                    onNotePressed: (note, pos) {
-                      sendNoteOn(note, 0x57);
-                    },
-                    onNoteReleased: (note) {
-                      sendNoteOff(note);
-                    },
+        body: FutureBuilder<void>(
+            future: midiInitCompleted,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const CircularProgressIndicator();
+              } else if (snapshot.hasError) {
+                return Text("Midi error: ${snapshot.error}");
+              }
+              return SingleChildScrollView(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    children: [
+                      spacerSmall,
+                      SizedBox(
+                        height: 120,
+                        child: VirtualPiano(
+                          noteRange: const RangeValues(52, 71),
+                          onNotePressed: (note, pos) {
+                            sendNoteOn(note, 0x57);
+                          },
+                          onNoteReleased: (note) {
+                            sendNoteOff(note);
+                          },
+                        ),
+                      ),
+                      spacerSmall,
+                      Container(
+                        color: Colors.blueAccent[100],
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            FutureBuilder<bool>(
+                              future: plugin.init(),
+                              builder: (BuildContext context, AsyncSnapshot<bool> value) {
+                                final displayValue =
+                                    (value.hasData) ? (value.data == true ? "completed" : "failed") : 'loading...';
+                                return Text(
+                                  'MSFA Engine Init: $displayValue',
+                                  style: textStyle,
+                                  textAlign: TextAlign.center,
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 16),
+                            MaterialButton(
+                              color: Colors.amberAccent,
+                              child: const Text("shutdown"),
+                              onPressed: () async {
+                                log("shutdown engine");
+                                plugin.shutDown();
+                              },
+                            ),
+                          ],
+                        ),
+                      )
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
-        ),
+              );
+            }),
       ),
     );
   }

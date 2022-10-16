@@ -15,9 +15,15 @@ dependencies:
   cupertino_icons: ^1.0.2
   msfa_plugin:
     path: ../msfa_plugin
-
   flutter_virtual_piano: ^0.0.6
+  flutter_midi_command: ^0.4.8
+  bonsai: ^1.0.1
+  ninja_hex: ^2.0.1
+  collection: ^1.16.0
 
+dependency_overrides:
+  flutter_midi_command_linux:
+    path: ../flutter_midi_command_linux
 
 dev_dependencies:
   flutter_test:
