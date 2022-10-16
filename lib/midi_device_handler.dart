@@ -32,8 +32,7 @@ class DeviceHandler {
     });
     MidiDevice? device;
     device = devices?.firstWhereOrNull((dev) => dev.name.toLowerCase().contains('circuit tracks'));
-    // device = devices?.firstWhereOrNull((dev) => dev.name.toLowerCase().contains('studio fire'));
-    
+     
     if (device != null) {
       await _midi.connectToDevice(device);
       _rxSubscription ??= _midi.onMidiDataReceived?.listen(_handleMidiInput);
