@@ -16,15 +16,24 @@ class App extends StatefulWidget {
 class AppState extends State<App> {
   late MSFAPlugin plugin;
   late final Future midiInitCompleted;
-  final MidiCommand midiCommand = MidiCommand();
-  late final midi = DeviceHandler(midiCommand);
+  late final MidiCommand midiCommand;
+  late final midiHandler = DeviceHandler(midiCommand);
 
   @override
   void initState() {
     super.initState();
+    midiCommand = MidiCommand();
     plugin = MSFAPlugin();
     log("MIDI init...");
-    midiInitCompleted = midi.connectDevice();
+    midiInitCompleted = midiHandler.connectDevice();
+    midiHandler.midiEvents.listen((event) {
+      log("midi event: ${event.data}");
+      if (event.data.length == 3) {
+        sendNoteOn(event.data[1], event.data[2]);
+      } else {
+        log("skipping long midi mesg: ${event.data.length}");
+      }
+    });
   }
 
   @override
@@ -33,7 +42,7 @@ class AppState extends State<App> {
     log("reassembling state...");
     plugin.shutDown();
     plugin = MSFAPlugin();
-    midi.disconnect();
+    midiHandler.disconnect();
   }
 
   @override
@@ -47,11 +56,6 @@ class AppState extends State<App> {
     // where status is 0x90-0x9F and the low nibble is the channel number 0-15
     // ref: http://midi.teragonaudio.com/tech/midispec/noteon.htm
     plugin.sendMidi([0x90, noteNumber, velocity]);
-  }
-
-  void sendNoteOff(int noteNumber) {
-    log("send note off: $noteNumber");
-    plugin.sendMidi([0x80, noteNumber, 0x00]);
   }
 
   @override
@@ -85,7 +89,7 @@ class AppState extends State<App> {
                             sendNoteOn(note, 0x57);
                           },
                           onNoteReleased: (note) {
-                            sendNoteOff(note);
+                            sendNoteOn(note, 0);
                           },
                         ),
                       ),

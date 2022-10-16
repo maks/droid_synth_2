@@ -66,7 +66,7 @@ class DeviceHandler {
     } else {
       // don't debug log Midi clock mesgs
       if (packet.data[0] != 0xF8) {
-        log('received Std Midi packet: ${hexView(0, packet.data)}');
+        //log('received Std Midi packet: ${hexView(0, packet.data)}');
         if (isProgramChange(packet.data)) {
           log('program change: $packet');
         } else {
