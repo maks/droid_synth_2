@@ -13,8 +13,7 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.2
-  msfa_plugin:
-    path: ../msfa_plugin
+  msfa_plugin: ^0.0.1
   flutter_virtual_piano: ^0.0.6
   flutter_midi_command: ^0.4.8
   bonsai: ^1.0.1

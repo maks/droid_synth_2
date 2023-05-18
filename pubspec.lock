@@ -183,9 +183,10 @@ packages:
   msfa_plugin:
     dependency: "direct main"
     description:
-      path: "../msfa_plugin"
-      relative: true
-    source: path
+      name: msfa_plugin
+      sha256: "58cd7bb9a2bcad58894be0f9ccf626738b787f84a6beb68e57013f3e6414d4ea"
+      url: "https://pub.dev"
+    source: hosted
     version: "0.0.1"
   ninja_hex:
     dependency: "direct main"
