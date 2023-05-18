@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:bonsai/bonsai.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter_midi_command/flutter_midi_command.dart';
-import 'package:ninja_hex/ninja_hex.dart';
+// import 'package:ninja_hex/ninja_hex.dart';
 
 class DeviceHandler {
   final MidiCommand _midi;
@@ -31,7 +31,7 @@ class DeviceHandler {
       log("midi device:${element.name}");
     });
     MidiDevice? device;
-    device = devices?.firstWhereOrNull((dev) => dev.name.toLowerCase().contains('circuit tracks'));
+    device = devices?.firstWhereOrNull((dev) => dev.name.toLowerCase().contains('launchkey'));
      
     if (device != null) {
       await _midi.connectToDevice(device);
