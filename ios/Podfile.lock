@@ -1,0 +1,28 @@
+PODS:
+  - Flutter (1.0.0)
+  - flutter_midi_command (0.4.2):
+    - Flutter
+  - msfa_plugin (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - flutter_midi_command (from `.symlinks/plugins/flutter_midi_command/ios`)
+  - msfa_plugin (from `.symlinks/plugins/msfa_plugin/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  flutter_midi_command:
+    :path: ".symlinks/plugins/flutter_midi_command/ios"
+  msfa_plugin:
+    :path: ".symlinks/plugins/msfa_plugin/ios"
+
+SPEC CHECKSUMS:
+  Flutter: f04841e97a9d0b0a8025694d0796dd46242b2854
+  flutter_midi_command: 760f0ec4b7c6d3034982f6045e878d9b7d01674e
+  msfa_plugin: 356ae1feead34bc235258c604f8476e483e693a3
+
+PODFILE CHECKSUM: 70d9d25280d0dd177a5f637cdb0f0b0b12c6a189
+
+COCOAPODS: 1.11.3
