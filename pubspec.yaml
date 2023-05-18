@@ -6,7 +6,7 @@ publish_to: "none"
 version: 1.0.0+1
 
 environment:
-  sdk: ">=2.18.2 <3.0.0"
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
@@ -19,11 +19,13 @@ dependencies:
   flutter_midi_command: ^0.4.8
   bonsai: ^1.0.1
   ninja_hex: ^2.0.1
-  collection: ^1.16.0
+  collection: ^1.17.0
 
 dependency_overrides:
   flutter_midi_command_linux:
-    path: ../flutter_midi_command_linux
+    git:
+      url: https://github.com/maks/flutter_midi_command_linux/
+      ref: update-package-deps
 
 dev_dependencies:
   flutter_test:
