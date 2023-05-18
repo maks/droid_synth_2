@@ -24,7 +24,7 @@ class AppState extends State<App> {
     super.initState();
     midiCommand = MidiCommand();
     plugin = MSFAPlugin();
-    log("MIDI init...");
+    log("MIDI init");
     midiInitCompleted = midiHandler.connectDevice();
     midiHandler.midiEvents.listen((event) {
       //log("midi event: ${event.data}");
