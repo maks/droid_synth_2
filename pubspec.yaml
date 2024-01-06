@@ -1,5 +1,5 @@
 name: droid_synth_2
-description: A new Flutter project.
+description: Emulator for a classic FM synth
 
 publish_to: "none"
 
@@ -16,16 +16,10 @@ dependencies:
   msfa_plugin:
     path: ../msfa_plugin
   flutter_virtual_piano: ^0.0.6
-  flutter_midi_command: ^0.4.8
-  bonsai: ^1.0.1
+  flutter_midi_command: ^0.4.15
+  bonsai: ^1.2.0
   ninja_hex: ^2.0.1
   collection: ^1.17.0
-
-dependency_overrides:
-  flutter_midi_command_linux:
-    git:
-      url: https://github.com/maks/flutter_midi_command_linux/
-      ref: update-package-deps
 
 dev_dependencies:
   flutter_test:
