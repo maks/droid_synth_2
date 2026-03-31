@@ -15,10 +15,10 @@ dependencies:
   cupertino_icons: ^1.0.2
   msfa_plugin: ^0.0.1
   flutter_virtual_piano: ^0.0.6
-  flutter_midi_command: ^0.4.15
   bonsai: ^1.2.0
   ninja_hex: ^2.0.1
   collection: ^1.17.0
+  flutter_midi_command: ^0.5.4
 
 dev_dependencies:
   flutter_test:
