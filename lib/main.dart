@@ -9,5 +9,11 @@ void main() {
   if (kDebugMode) {
     Log.init();
   }
-  runApp(const App());
+  runApp(
+    MaterialApp(
+      title: 'Droid Synth',
+      debugShowCheckedModeBanner: false,
+      home: const App(),
+    ),
+  );
 }

@@ -1,30 +1,41 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// Flutter DX7 Synth Widget Tests
 
-import 'package:droid_synth_2/app.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:droid_synth_2/app.dart';
+import 'package:droid_synth_2/services/patch_manager.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const App());
+  group('Bank Loader UI Tests', () {
+    testWidgets('Bank Loader Dialog shows current bank status', (tester) async {
+      final patchManager = PatchManager();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BankLoaderDialog(patchManager: patchManager),
+          ),
+        ),
+      );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      expect(find.text('Load DX7 Bank'), findsOneWidget);
+    });
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  group('Channel Assignments UI Tests', () {
+    testWidgets('Channel Assignments Dialog shows channel list', (tester) async {
+      final patchManager = PatchManager();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChannelAssignmentsDialog(
+              patchManager: patchManager,
+              onClose: () {},
+            ),
+          ),
+        ),
+      );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+      expect(find.text('Channel Assignments'), findsOneWidget);
+    });
   });
 }

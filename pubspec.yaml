@@ -19,6 +19,8 @@ dependencies:
   ninja_hex: ^2.0.1
   collection: ^1.17.0
   flutter_midi_command: ^0.5.4
+  file_picker: ^5.3.2
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:
