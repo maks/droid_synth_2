@@ -121,6 +121,8 @@ class MidiRouter {
       return;
     }
 
+    print('\n*** MSFA PROGRAM CHANGE *** Channel=$channel, Program=$program');
+
     // For DX7 compatibility, send bank select MSB and LSB first (both 0 for single bank)
     // Bank Select MSB: 0xB0 | channel, 0x00, 0x00
     final bankSelectMsb = Uint8List.fromList([0xB0 | channel, 0x00, 0x00]);
@@ -150,7 +152,7 @@ class MidiRouter {
   void _ensurePatchLoaded(int channel, int patchIndex) {
     if (patchIndex == -1) {
       _log('Channel $channel: no patch assigned, skipping');
-      return; // No patch assigned
+      return;
     }
 
     if (_patchManager.bank == null) {
@@ -160,11 +162,11 @@ class MidiRouter {
 
     final currentProgram = _currentPrograms[channel];
     if (currentProgram == patchIndex) {
-      _log('Channel $channel: patch $patchIndex already loaded');
+      _log('Channel $channel: patch $patchIndex already loaded, no change');
       return; // Already loaded, no need to resend
     }
 
-    _log('Channel $channel: ensuring patch $patchIndex (current: $currentProgram)');
+    _log('Channel $channel: changing from program $currentProgram to patch $patchIndex');
     _sendProgramChange(channel, patchIndex);
   }
 
@@ -355,6 +357,46 @@ class MidiRouter {
     }
     _log('Active notes: $_activeNotes');
     _log('========================');
+  }
+
+  /// Send a note from the virtual piano
+  /// This ensures the correct patch is loaded before playing
+  void sendVirtualPianoNote(int note, int velocity, {int channel = 0}) {
+    if (velocity == 0) {
+      // Note off
+      sendNoteOff(channel, note);
+      return;
+    }
+    
+    _log('Virtual Piano Note On: channel=$channel, note=$note, velocity=$velocity');
+    _log('  Bank loaded: ${_patchManager.isBankLoaded}');
+    
+    // Ensure the patch is loaded for this channel
+    final patchIndex = _patchManager.getPatchIndexForChannel(channel);
+    _log('  Patch index for channel $channel: $patchIndex');
+    
+    if (patchIndex != -1) {
+      _ensurePatchLoaded(channel, patchIndex);
+    } else {
+      _log('  WARNING: No patch assigned to channel $channel!');
+    }
+    
+    // Send note on
+    final message = [0x90 | channel, note, velocity];
+    _log('  Sending note on bytes: $message');
+    onSendRawMidi?.call(Uint8List.fromList(message));
+    _log('Virtual Piano: Note On sent channel=${channel + 1}, note=$note, velocity=$velocity');
+  }
+
+  /// Send a note off for the virtual piano
+  void sendVirtualPianoNoteOff(int note, {int channel = 0}) {
+    sendNoteOff(channel, note);
+  }
+
+  void sendNoteOff(int channel, int note) {
+    final message = [0x80 | channel, note, 0x00];
+    onSendRawMidi?.call(Uint8List.fromList(message));
+    _log('Virtual Piano: Note Off channel=${channel + 1}, note=$note');
   }
 }
 

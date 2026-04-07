@@ -9,6 +9,10 @@ class PatchManager extends ChangeNotifier {
   /// Callback for when a channel assignment changes
   /// Called after assignPatch() with the channel and new patch index
   void Function(int channel, int patchIndex)? onAssignmentChanged;
+
+  /// Callback for sending raw SYSEX bytes to initialize plugin
+  void Function(Uint8List sysexBytes)? onSendSysexToPlugin;
+
   final Dx7BankLoader _loader = Dx7BankLoader();
 
   /// Currently loaded bank
@@ -26,6 +30,11 @@ class PatchManager extends ChangeNotifier {
     for (int i = 0; i < 16; i++) {
       _assignments.add(ChannelAssignment.unassigned(i));
     }
+  }
+
+  /// Set the callback for sending SYSEX to the plugin
+  void setOnSendSysexToPlugin(void Function(Uint8List bytes) callback) {
+    onSendSysexToPlugin = callback;
   }
 
   /// Currently loaded bank
@@ -62,9 +71,10 @@ class PatchManager extends ChangeNotifier {
   }
 
   /// Load a DX7 SYSEX bank from raw bytes
-  Future<bool> loadBank(Uint8List bytes, {String? identifier}) async {
+  Future<bool> loadBank(Uint8List bytes, {String? identifier, Uint8List? rawSysex}) async {
     try {
       print('PatchManager.loadBank: Received ${bytes.length} bytes');
+      print('PatchManager.loadRawSYSEX');
       print('PatchManager.loadBank: First 20 bytes: ${bytes.sublist(0, bytes.length.clamp(0, 20)).map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')}');
       
       // Parse the bank
@@ -84,6 +94,21 @@ class PatchManager extends ChangeNotifier {
 
       // Swap to a new bank without notifying changes
       _swapBank(bank, identifier: identifier);
+      
+      // Auto-assign first patch to channel 0 for immediate preview
+      if (bank.validPatches.isNotEmpty) {
+        final firstPatchIndex = bank.validPatches[0].key;
+        _assignments[0] = _assignments[0].copyWithPatchIndex(firstPatchIndex);
+        print('PatchManager.loadBank: Auto-assigned patch $firstPatchIndex (${bank.validPatches[0].value.name}) to channel 1 for preview');
+      }
+      
+      // Send raw SYSEX to plugin if callback is set (for ROM bank loading)
+      if (rawSysex != null && onSendSysexToPlugin != null) {
+        print('PatchManager.loadBank: Sending ROM SYSEX to plugin for initialization');
+        onSendSysexToPlugin?.call(rawSysex);
+        print('PatchManager.loadBank: ROM SYSEX sent to plugin');
+      }
+      
       notifyListeners();
 
       print('Loaded bank with ${bank.validPatches.length} patches');
@@ -130,10 +155,12 @@ class PatchManager extends ChangeNotifier {
       throw RangeError('Patch index must be 0-127 or -1, got $patchIndex');
     }
 
+    print('PatchManager.assignPatch: channel=$channel, patchIndex=$patchIndex');
     _assignments[channel] = _assignments[channel].copyWithPatchIndex(patchIndex);
     notifyListeners();
     
     // Notify assignment change callback if set
+    print('PatchManager.assignPatch: calling onAssignmentChanged callback');
     onAssignmentChanged?.call(channel, patchIndex);
   }
 

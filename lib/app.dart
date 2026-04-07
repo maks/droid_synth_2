@@ -31,10 +31,12 @@ class AppState extends State<App> {
     midiCommand = MidiCommand();
     plugin = MSFAPlugin();
     patchManager = PatchManager();
+    patchManager.setOnSendSysexToPlugin(_sendRawMidiToPlugin);
     midiRouter = MidiRouter(
       midi: midiCommand,
       patchManager: patchManager,
       onSendRawMidi: _sendRawMidiToPlugin,
+      onSendProgramChange: _sendProgramChangeToPlugin,
     );
 
     log('MIDI init');
@@ -82,10 +84,15 @@ class AppState extends State<App> {
     plugin.sendMidi(bytes);
   }
 
-  void sendProgramChange(int channel, int program) {
+  void _sendProgramChangeToPlugin(int channel, int program) {
     final statusByte = 0xC0 | channel; // Program Change format: C0 + channel number
     final bytes = Uint8List.fromList([statusByte, program]);
+    log('Sending Program Change to plugin: channel=$channel, program=$program, bytes=$bytes');
     plugin.sendMidi(bytes);
+  }
+
+  void sendProgramChange(int channel, int program) {
+    _sendProgramChangeToPlugin(channel, program);
   }
 
   /// Build a DX7 single voice SYSEX message from 128 bytes of voice data
@@ -221,7 +228,7 @@ class AppState extends State<App> {
                                   ? patchManager.bank?.getPatch(assignment.patchIndex)?.name ?? 'Unknown'
                                   : 'Unassigned';
                               return _buildChannelChip(
-                                assignment.midiChannel,
+                                index, // Pass 0-15 index, not midiChannel (1-16)
                                 patchInfo,
                                 assignment.isAssigned,
                               );
@@ -306,13 +313,13 @@ class AppState extends State<App> {
       );
   }
 
-  Widget _buildChannelChip(int channel, String patchName, bool isAssigned) {
+  Widget _buildChannelChip(int channelIndex, String patchName, bool isAssigned) {
     final color = isAssigned
         ? Colors.green[700]!
         : Colors.grey[400]!;
-    final label = patchName.isNotEmpty ? patchName : 'CH $channel';
+    final label = patchName.isNotEmpty ? patchName : 'CH ${channelIndex + 1}';
     return GestureDetector(
-      onTap: () => _showChannelAssignments(channel: channel),
+      onTap: () => _showChannelAssignments(channel: channelIndex),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -345,20 +352,29 @@ class AppState extends State<App> {
         onClose: () {
           // No need to notify listeners; dialog handles its own state
         },
+        onPreviewPatch: (patchIndex) {
+          // Preview the patch by temporarily assigning it to channel 0 and playing a note
+          final originalPatch = patchManager.getPatchIndexForChannel(0);
+          patchManager.assignPatch(0, patchIndex);
+          midiRouter.sendVirtualPianoNote(60, 87); // Middle C
+          
+          // Restore original after a short delay
+          Future.delayed(const Duration(milliseconds: 500), () {
+            patchManager.assignPatch(0, originalPatch);
+          });
+        },
       ),
     );
   }
 
   void _onNoteDown(int note) {
-    // Virtual piano always sends on channel 0 (MIDI channel 1) for testing
-    // The piano widget returns velocity, but we use a fixed value
-    final bytes = Uint8List.fromList([0x90, note, 0x57]); // 0x90 = Note On on channel 0
-    plugin.sendMidi(bytes);
+    // Virtual piano uses channel 0 (MIDI channel 1) and sends through the router
+    // to ensure the correct patch is loaded and program changes are sent
+    midiRouter.sendVirtualPianoNote(note, 87); // velocity 87 (0x57)
   }
 
   void _onNoteUp(int note) {
-    final bytes = Uint8List.fromList([0x90, note, 0x00]); // Note Off
-    plugin.sendMidi(bytes);
+    midiRouter.sendVirtualPianoNoteOff(note);
   }
 }
 
@@ -397,7 +413,7 @@ class _BankLoaderDialogState extends State<BankLoaderDialog> {
         throw Exception('No file data');
       }
       final success = await widget.patchManager.loadBank(bytes,
-          identifier: result.files.single.name);
+          identifier: result.files.single.name, rawSysex: bytes);
       if (success) {
         // Optionally store identifier in shared preferences
         // For now just close dialog
@@ -503,12 +519,14 @@ class ChannelAssignmentsDialog extends StatefulWidget {
   final PatchManager patchManager;
   final int? startChannel;
   final VoidCallback onClose;
+  final Function(int patchIndex)? onPreviewPatch;
 
   const ChannelAssignmentsDialog({
     Key? key,
     required this.patchManager,
     this.startChannel,
     required this.onClose,
+    this.onPreviewPatch,
   }) : super(key: key);
 
   @override
@@ -605,18 +623,36 @@ class _ChannelAssignmentsDialogState extends State<ChannelAssignmentsDialog> {
             ),
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
+              child: Column(
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: _assignAllSamePatch,
-                    icon: const Icon(Icons.check_circle),
-                    label: const Text('Assign All Same Patch'),
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _assignAllSamePatch,
+                        icon: const Icon(Icons.check_circle),
+                        label: const Text('Assign All Same Patch'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _unassignAll,
+                        icon: const Icon(Icons.clear_all),
+                        label: const Text('Unassign All'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: _unassignAll,
-                    icon: const Icon(Icons.clear_all),
-                    label: const Text('Unassign All'),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _previewCurrentPatch,
+                        icon: const Icon(Icons.play_arrow, size: 18),
+                        label: const Text('Preview Patch', style: TextStyle(fontSize: 12)),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -763,6 +799,34 @@ class _ChannelAssignmentsDialogState extends State<ChannelAssignmentsDialog> {
       _assignmentsCopy[i] = ChannelAssignment.unassigned(i);
     }
     setState(() {});
+  }
+
+  void _previewCurrentPatch() {
+    // Find a patch to preview - use the first channel that has a patch assigned
+    // or use channel 0's assignment
+    int patchIndexToPreview = _assignmentsCopy[0].patchIndex;
+    
+    // If channel 0 is unassigned, find any assigned patch
+    if (patchIndexToPreview == -1 && _pm.bank != null) {
+      for (int i = 0; i < 16; i++) {
+        if (_assignmentsCopy[i].patchIndex != -1) {
+          patchIndexToPreview = _assignmentsCopy[i].patchIndex;
+          break;
+        }
+      }
+    }
+    
+    if (patchIndexToPreview == -1) {
+      // No patches assigned, use first patch in bank
+      if (_pm.bank != null && _pm.bank!.validPatches.isNotEmpty) {
+        patchIndexToPreview = _pm.bank!.validPatches[0].key;
+      } else {
+        return; // No patches available
+      }
+    }
+    
+    // Call the parent's preview callback
+    widget.onPreviewPatch?.call(patchIndexToPreview);
   }
 
   void _saveAndClose() {

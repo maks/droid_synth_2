@@ -99,13 +99,15 @@ void main() {
       final romFile = File('rom1a.syx');
       final bytes = romFile.readAsBytesSync();
       
-      // ROM data should start at offset 7 (after 7-byte header)
-      // First patch name should be at offset 7-12
-      final nameBytes = bytes.sublist(7, 13);
+      // ROM data starts at offset 7 (after 7-byte header)
+      // First patch is 128 bytes, name starts at byte 117+7 = 124 relative to ROM file
+      // Byte 124 = 'B' of 'BRASS 1'
+      final nameBytes = bytes.sublist(124, 134); // 124-133 = 'BRASS   1 '
       final name = String.fromCharCodes(nameBytes).trim();
-      print('First patch name from raw bytes: "$name"');
+      print('First patch name from raw bytes (offset 124-134, trimmed): "$name"');
       
       expect(name.isNotEmpty, true, reason: 'First patch should have a name');
+      expect(name, 'BRASS   1', reason: 'First patch should start with BRASS   1');
     });
   });
 
