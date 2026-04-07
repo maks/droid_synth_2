@@ -4,16 +4,15 @@ import 'package:flutter/material.dart';
 
 import 'app.dart';
 
-
 void main() {
   if (kDebugMode) {
     Log.init();
   }
   runApp(
-    MaterialApp(
-      title: 'Droid Synth',
+    const MaterialApp(
+      title: appTitle,
       debugShowCheckedModeBanner: false,
-      home: const App(),
+      home: App(),
     ),
   );
 }

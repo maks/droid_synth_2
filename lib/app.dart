@@ -12,6 +12,8 @@ import 'models/dx7_bank.dart';
 import 'services/midi_router.dart';
 import 'services/patch_manager.dart';
 
+const appTitle = 'Droid Synth MT';
+
 class App extends StatefulWidget {
   const App({Key? key}) : super(key: key);
 
@@ -138,7 +140,8 @@ class AppState extends State<App> {
     if (!assignment.isAssigned) {
       return 'Unassigned';
     }
-    return patchManager.bank?.getPatch(assignment.patchIndex)?.name ?? 'Patch ${assignment.patchIndex}';
+    return patchManager.bank?.getPatch(assignment.patchIndex)?.name ??
+        'Patch ${assignment.patchIndex}';
   }
 
   void _selectPianoChannel(int channel) {
@@ -156,7 +159,8 @@ class AppState extends State<App> {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Load a DX7 bank before assigning patches')),
+        const SnackBar(
+            content: Text('Load a DX7 bank before assigning patches')),
       );
       return;
     }
@@ -197,7 +201,7 @@ class AppState extends State<App> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Droid Synth'),
+            const Text(appTitle),
             Text(
               bankStatusText,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -229,23 +233,27 @@ class AppState extends State<App> {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
           } else if (snapshot.hasError) {
-            return Center(child: Text('Initialization error: ${snapshot.error}'));
+            return Center(
+                child: Text('Initialization error: ${snapshot.error}'));
           }
 
           return AnimatedBuilder(
             animation: patchManager,
             builder: (context, _) {
-              final assignedChannels = patchManager.assignments.where((assignment) => assignment.isAssigned).length;
-              final selectedPatchLabel = _patchLabelForChannel(_selectedPianoChannel);
+              final assignedChannels = patchManager.assignments
+                  .where((assignment) => assignment.isAssigned)
+                  .length;
+              final selectedPatchLabel =
+                  _patchLabelForChannel(_selectedPianoChannel);
 
               return Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildChannelsCard(assignedChannels),
-                      spacerMedium,
-                      Expanded(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildChannelsCard(assignedChannels),
+                    spacerMedium,
+                    Expanded(
                       child: Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -261,13 +269,17 @@ class AppState extends State<App> {
                                 Expanded(
                                   child: Text(
                                     'Selected: CH ${_selectedPianoChannel + 1}',
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
                                           fontWeight: FontWeight.w700,
                                         ),
                                   ),
                                 ),
                                 FilledButton.tonalIcon(
-                                  onPressed: () => _showPatchPickerForChannel(_selectedPianoChannel),
+                                  onPressed: () => _showPatchPickerForChannel(
+                                      _selectedPianoChannel),
                                   icon: const Icon(Icons.tune),
                                   label: const Text('Change Patch'),
                                 ),
@@ -278,7 +290,10 @@ class AppState extends State<App> {
                               selectedPatchLabel,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodyLarge
+                                  ?.copyWith(
                                     color: const Color(0xFF5E5A51),
                                   ),
                             ),
@@ -288,16 +303,21 @@ class AppState extends State<App> {
                                 Expanded(
                                   child: Text(
                                     'Tap a channel above to audition it on the keyboard.',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
                                           color: const Color(0xFF6C675F),
                                         ),
                                   ),
                                 ),
-                                if (patchManager.getAssignment(_selectedPianoChannel).isAssigned)
+                                if (patchManager
+                                    .getAssignment(_selectedPianoChannel)
+                                    .isAssigned)
                                   TextButton(
                                     onPressed: _clearSelectedChannelAssignment,
                                     child: const Text('Clear'),
-                                ),
+                                  ),
                               ],
                             ),
                             const SizedBox(height: 16),
@@ -433,8 +453,11 @@ class AppState extends State<App> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: isAssigned ? const Color(0xFF39423C) : const Color(0xFF7A807A),
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color: isAssigned
+                          ? const Color(0xFF39423C)
+                          : const Color(0xFF7A807A),
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w500,
                     ),
               ),
             ],
@@ -463,7 +486,8 @@ class AppState extends State<App> {
           // No need to notify listeners; dialog handles its own state
         },
         onPreviewPatch: (patchIndex) {
-          final originalPatch = patchManager.getPatchIndexForChannel(previewChannel);
+          final originalPatch =
+              patchManager.getPatchIndexForChannel(previewChannel);
           patchManager.assignPatch(previewChannel, patchIndex);
           midiRouter.sendVirtualPianoNote(60, 87, channel: previewChannel);
 
@@ -497,7 +521,8 @@ class _ChannelPatchPickerSheet extends StatefulWidget {
   });
 
   @override
-  State<_ChannelPatchPickerSheet> createState() => _ChannelPatchPickerSheetState();
+  State<_ChannelPatchPickerSheet> createState() =>
+      _ChannelPatchPickerSheetState();
 }
 
 class _ChannelPatchPickerSheetState extends State<_ChannelPatchPickerSheet> {
@@ -519,14 +544,16 @@ class _ChannelPatchPickerSheetState extends State<_ChannelPatchPickerSheet> {
   @override
   Widget build(BuildContext context) {
     final bank = widget.patchManager.bank;
-    final validPatches = bank?.validPatches ?? const <MapEntry<int, Dx7Patch>>[];
+    final validPatches =
+        bank?.validPatches ?? const <MapEntry<int, Dx7Patch>>[];
     final normalizedQuery = _query.trim().toLowerCase();
     final filteredPatches = validPatches.where((entry) {
       if (normalizedQuery.isEmpty) {
         return true;
       }
       final patchName = entry.value.name.toLowerCase();
-      return patchName.contains(normalizedQuery) || entry.key.toString().contains(normalizedQuery);
+      return patchName.contains(normalizedQuery) ||
+          entry.key.toString().contains(normalizedQuery);
     }).toList();
 
     return SafeArea(
@@ -544,12 +571,18 @@ class _ChannelPatchPickerSheetState extends State<_ChannelPatchPickerSheet> {
             children: [
               Text(
                 'Assign Patch to CH ${widget.channel + 1}',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
               Text(
                 'Select a patch for keyboard preview and channel playback.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF6C675F)),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: const Color(0xFF6C675F)),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -584,7 +617,9 @@ class _ChannelPatchPickerSheetState extends State<_ChannelPatchPickerSheet> {
                 leading: const Icon(Icons.volume_off_outlined),
                 title: const Text('Unassigned'),
                 subtitle: const Text('Mute this channel'),
-                trailing: widget.currentPatchIndex == -1 ? const Icon(Icons.check) : null,
+                trailing: widget.currentPatchIndex == -1
+                    ? const Icon(Icons.check)
+                    : null,
                 onTap: () => Navigator.of(context).pop(-1),
               ),
               const Divider(),
@@ -597,12 +632,14 @@ class _ChannelPatchPickerSheetState extends State<_ChannelPatchPickerSheet> {
                         itemCount: filteredPatches.length,
                         itemBuilder: (context, index) {
                           final entry = filteredPatches[index];
-                          final isCurrent = entry.key == widget.currentPatchIndex;
+                          final isCurrent =
+                              entry.key == widget.currentPatchIndex;
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
                             title: Text(entry.value.name),
                             subtitle: Text('Patch ${entry.key}'),
-                            trailing: isCurrent ? const Icon(Icons.check) : null,
+                            trailing:
+                                isCurrent ? const Icon(Icons.check) : null,
                             onTap: () => Navigator.of(context).pop(entry.key),
                           );
                         },
@@ -620,7 +657,8 @@ class _ChannelPatchPickerSheetState extends State<_ChannelPatchPickerSheet> {
 class BankLoaderDialog extends StatefulWidget {
   final PatchManager patchManager;
 
-  const BankLoaderDialog({Key? key, required this.patchManager}) : super(key: key);
+  const BankLoaderDialog({Key? key, required this.patchManager})
+      : super(key: key);
 
   @override
   State<BankLoaderDialog> createState() => _BankLoaderDialogState();
@@ -854,9 +892,11 @@ class _ChannelAssignmentsDialogState extends State<ChannelAssignmentsDialog> {
             const Divider(height: 1),
             Expanded(
               child: ListView(
-                children: visibleChannels.map((channel) => _buildChannelRowDropdown(
-                      channel,
-                    )).toList(),
+                children: visibleChannels
+                    .map((channel) => _buildChannelRowDropdown(
+                          channel,
+                        ))
+                    .toList(),
               ),
             ),
             Padding(
@@ -885,9 +925,11 @@ class _ChannelAssignmentsDialogState extends State<ChannelAssignmentsDialog> {
                       ElevatedButton.icon(
                         onPressed: _previewCurrentPatch,
                         icon: const Icon(Icons.play_arrow, size: 18),
-                        label: const Text('Preview Patch', style: TextStyle(fontSize: 12)),
+                        label: const Text('Preview Patch',
+                            style: TextStyle(fontSize: 12)),
                         style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
                         ),
                       ),
                     ],
@@ -956,22 +998,26 @@ class _ChannelAssignmentsDialogState extends State<ChannelAssignmentsDialog> {
         children: [
           Expanded(
             flex: 2,
-            child: Text('Channel ${channel + 1}', style: const TextStyle(fontSize: 16)),
+            child: Text('Channel ${channel + 1}',
+                style: const TextStyle(fontSize: 16)),
           ),
           const SizedBox(width: 12),
           Expanded(
             flex: 3,
             child: DropdownButtonFormField<int?>(
-              initialValue: assignment.patchIndex == -1 ? null : assignment.patchIndex,
+              initialValue:
+                  assignment.patchIndex == -1 ? null : assignment.patchIndex,
               items: items,
               onChanged: (value) {
                 setState(() {
-                  _assignmentsCopy[channel] = ChannelAssignment(channel, value ?? -1);
+                  _assignmentsCopy[channel] =
+                      ChannelAssignment(channel, value ?? -1);
                 });
               },
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
             ),
           ),
@@ -1043,7 +1089,7 @@ class _ChannelAssignmentsDialogState extends State<ChannelAssignmentsDialog> {
     // Find a patch to preview - use the first channel that has a patch assigned
     // or use channel 0's assignment
     int patchIndexToPreview = _assignmentsCopy[0].patchIndex;
-    
+
     // If channel 0 is unassigned, find any assigned patch
     if (patchIndexToPreview == -1 && _pm.bank != null) {
       for (int i = 0; i < 16; i++) {
@@ -1053,7 +1099,7 @@ class _ChannelAssignmentsDialogState extends State<ChannelAssignmentsDialog> {
         }
       }
     }
-    
+
     if (patchIndexToPreview == -1) {
       // No patches assigned, use first patch in bank
       if (_pm.bank != null && _pm.bank!.validPatches.isNotEmpty) {
@@ -1062,7 +1108,7 @@ class _ChannelAssignmentsDialogState extends State<ChannelAssignmentsDialog> {
         return; // No patches available
       }
     }
-    
+
     // Call the parent's preview callback
     widget.onPreviewPatch?.call(patchIndexToPreview);
   }
