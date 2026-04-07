@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:bonsai/bonsai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_midi_command/flutter_midi_command.dart';
 import 'package:flutter_virtual_piano/flutter_virtual_piano.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:msfa_plugin/msfa_plugin.dart';
 
 import 'models/dx7_bank.dart';
@@ -18,11 +20,17 @@ class App extends StatefulWidget {
 }
 
 class AppState extends State<App> {
+  static const int _synthChannelCount = 16;
+
   late MSFAPlugin plugin;
-  late final Future midiInitCompleted;
+  late final Future<void> appInitCompleted;
   late final MidiCommand midiCommand;
   late final MidiRouter midiRouter;
   late final PatchManager patchManager;
+
+  bool _engineReady = false;
+  String _engineStatus = 'initializing';
+  int _selectedPianoChannel = 0;
 
   @override
   void initState() {
@@ -31,7 +39,7 @@ class AppState extends State<App> {
     midiCommand = MidiCommand();
     plugin = MSFAPlugin();
     patchManager = PatchManager();
-    patchManager.setOnSendSysexToPlugin(_sendRawMidiToPlugin);
+    patchManager.setOnSendSysexToPlugin(_sendBankSysexToAllSynths);
     midiRouter = MidiRouter(
       midi: midiCommand,
       patchManager: patchManager,
@@ -39,285 +47,327 @@ class AppState extends State<App> {
       onSendProgramChange: _sendProgramChangeToPlugin,
     );
 
-    log('MIDI init');
-    midiInitCompleted = midiRouter.connectDevice();
+    appInitCompleted = _initializeApp();
 
-    // Listen to MIDI input events
     midiRouter.midiEvents.listen((event) {
       log('midi event: ${event.data}');
-      // Note events are already routed by MidiRouter
     });
 
-    // Listen to status messages
     midiRouter.messages.listen((message) {
       log(message);
     });
   }
 
+  Future<void> _initializeApp() async {
+    try {
+      final initialized = await plugin.init();
+      if (!initialized) {
+        throw StateError('MSFA engine failed to initialize');
+      }
+
+      for (int channel = 1; channel < _synthChannelCount; channel++) {
+        plugin.createSynth();
+      }
+
+      await midiRouter.connectDevice();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _engineReady = true;
+        _engineStatus = 'active';
+      });
+    } catch (error, stackTrace) {
+      log('App initialization failed: $error\n$stackTrace');
+      if (mounted) {
+        setState(() {
+          _engineStatus = 'failed';
+        });
+      }
+      rethrow;
+    }
+  }
+
   void _sendRawMidiToPlugin(Uint8List bytes) {
+    if (!_engineReady) {
+      log('Ignoring MIDI before engine init: $bytes');
+      return;
+    }
     log('Plugin sendMidi: $bytes');
     plugin.sendMidi(bytes);
   }
 
   @override
-  void reassemble() {
-    super.reassemble();
-    log('reassembling state...');
-    plugin.shutDown();
-    plugin = MSFAPlugin();
-    midiRouter.disconnect();
-  }
-
-  @override
   void dispose() {
     patchManager.dispose();
+    midiRouter.disconnect();
     midiRouter.close();
     midiCommand.dispose();
     plugin.shutDown();
     super.dispose();
   }
 
-  void sendNoteOn(int noteNumber, int velocity, [int channel = 0]) {
-    final statusByte = 0x90 | channel; // Note On status for channel
-    // Note On MIDI format: [Status, Note number, Velocity] on a single channel
-    final bytes = Uint8List.fromList([statusByte, noteNumber, velocity.clamp(0, 127)]);
-    plugin.sendMidi(bytes);
-  }
-
   void _sendProgramChangeToPlugin(int channel, int program) {
-    final statusByte = 0xC0 | channel; // Program Change format: C0 + channel number
+    if (!_engineReady) {
+      return;
+    }
+    final statusByte = 0xC0 | channel;
     final bytes = Uint8List.fromList([statusByte, program]);
     log('Sending Program Change to plugin: channel=$channel, program=$program, bytes=$bytes');
-    plugin.sendMidi(bytes);
+    plugin.sendMidiToChannel(channel, bytes);
   }
 
-  void sendProgramChange(int channel, int program) {
-    _sendProgramChangeToPlugin(channel, program);
-  }
+  void _sendBankSysexToAllSynths(Uint8List sysexBytes) {
+    Future<void> send() async {
+      await appInitCompleted;
+      if (!_engineReady) {
+        return;
+      }
 
-  /// Build a DX7 single voice SYSEX message from 128 bytes of voice data
-  /// DX7 single voice format:
-  ///   F0 43 00 20 00 00 00 44 02 <128 byte voice> F7
-  /// Total: 145 bytes
-  Uint8List _buildDx7Sysex(Uint8List voiceData) {
-    if (voiceData.length != 128) {
-      throw ArgumentError(
-          'DX7 voice data must be exactly 128 bytes, got ${voiceData.length}',
-      );
+      for (int channel = 0; channel < _synthChannelCount; channel++) {
+        plugin.sendMidiToChannel(channel, sysexBytes);
+      }
+
+      for (final assignment in patchManager.assignments) {
+        if (assignment.isAssigned) {
+          _sendProgramChangeToPlugin(assignment.channel, assignment.patchIndex);
+        }
+      }
     }
-    final sysex = Uint8List(145);
-    // SYSEX header: F0 43 00 20 00 00 00 44 02
-    sysex[0] = 0xF0; // Start of SYSEX
-    sysex[1] = 0x43; // Yamaha
-    sysex[2] = 0x00;
-    sysex[3] = 0x20; // Data Set: Voice
-    sysex[4] = 0x00; // Data Set number MSB
-    sysex[5] = 0x00;
-    sysex[6] = 0x00;
-    sysex[7] = 0x44; // DX7 Model ID MSB
-    sysex[8] = 0x02; // DX7 Model ID LSB
-    // Voice data (128 bytes)
-    for (int i = 0; i < 128; i++) {
-      sysex[9 + i] = voiceData[i];
-    }
-    // End of SYSEX
-    sysex[137] = 0xF7;
-    return sysex;
+
+    unawaited(send());
   }
 
-  /// Send a DX7 voice SYSEX to load it into the msfa_plugin
-  void sendDx7Voice(Uint8List voiceData) {
-    final sysex = _buildDx7Sysex(voiceData);
-    log('Sending DX7 SYSEX to plugin: ${sysex.length} bytes');
-    plugin.sendMidi(sysex);
+  String _patchLabelForChannel(int channel) {
+    final assignment = patchManager.getAssignment(channel);
+    if (!assignment.isAssigned) {
+      return 'Unassigned';
+    }
+    return patchManager.bank?.getPatch(assignment.patchIndex)?.name ?? 'Patch ${assignment.patchIndex}';
   }
 
   @override
   Widget build(BuildContext context) {
     const textStyle = TextStyle(fontSize: 14);
-    const spacerSmall = SizedBox(height: 10);
     const spacerMedium = SizedBox(height: 20);
 
     return Scaffold(
-        appBar: AppBar(
-          title: const Text('Droid Synth'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.storage),
-              tooltip: 'Load DX7 Bank',
-              onPressed: _showBankLoaderDialog,
-            ),
-            IconButton(
-              icon: const Icon(Icons.list),
-              tooltip: 'Channel Assignments',
-              onPressed: _showChannelAssignments,
-            ),
-          ],
-        ),
-        body: FutureBuilder<void>(
-          future: midiInitCompleted,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (snapshot.hasError) {
-              return Center(child: Text("MIDI error: ${snapshot.error}"));
-            }
+      appBar: AppBar(
+        title: const Text('Droid Synth'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.storage),
+            tooltip: 'Load DX7 Bank',
+            onPressed: _showBankLoaderDialog,
+          ),
+          IconButton(
+            icon: const Icon(Icons.list),
+            tooltip: 'Channel Assignments',
+            onPressed: _showChannelAssignments,
+          ),
+        ],
+      ),
+      body: FutureBuilder<void>(
+        future: appInitCompleted,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Initialization error: ${snapshot.error}'));
+          }
 
-            return SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Multitimbral DX7 Synth',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+          return AnimatedBuilder(
+            animation: patchManager,
+            builder: (context, _) {
+              final assignedChannels = patchManager.assignments.where((assignment) => assignment.isAssigned).length;
+
+              return SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Multitimbral DX7 Synth',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                    spacerMedium,
-                    // Bank status
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue[50],
-                        borderRadius: BorderRadius.circular(8),
+                      spacerMedium,
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.storage, color: Colors.blue),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    patchManager.isBankLoaded
+                                        ? '${patchManager.bank?.validPatches.length ?? 0} patches loaded'
+                                        : 'No bank loaded',
+                                    style: const TextStyle(fontWeight: FontWeight.w500),
+                                  ),
+                                  if (patchManager.bankIdentifier != null)
+                                    Text(
+                                      patchManager.bankIdentifier!,
+                                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.refresh),
+                              tooltip: 'Load New Bank',
+                              onPressed: _showBankLoaderDialog,
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.storage, color: Colors.blue),
-                          const Spacer(),
-                          Text(
-                            patchManager.isBankLoaded
-                                ? '${patchManager.bank?.validPatches.length ?? 0} patches loaded'
-                                : 'No bank loaded',
-                            style: const TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.refresh),
-                            tooltip: 'Load New Bank',
-                            onPressed: _showBankLoaderDialog,
-                          ),
-                        ],
+                      spacerMedium,
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green[50],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Channel Assignments Summary ($assignedChannels/16)',
+                              style: const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: List.generate(16, (index) {
+                                final assignment = patchManager.getAssignment(index);
+                                return _buildChannelChip(
+                                  index,
+                                  _patchLabelForChannel(index),
+                                  assignment.isAssigned,
+                                );
+                              }),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Tap a channel to change its patch',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    spacerMedium,
-                    // Channel assignment summary
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.green[50],
-                        borderRadius: BorderRadius.circular(8),
+                      spacerMedium,
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.orange[50],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Expanded(
+                                  child: Text(
+                                    'Virtual Piano',
+                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                DropdownButton<int>(
+                                  value: _selectedPianoChannel,
+                                  onChanged: (value) {
+                                    if (value == null) {
+                                      return;
+                                    }
+                                    setState(() {
+                                      _selectedPianoChannel = value;
+                                    });
+                                  },
+                                  items: List.generate(16, (channel) {
+                                    return DropdownMenuItem<int>(
+                                      value: channel,
+                                      child: Text('CH ${channel + 1}'),
+                                    );
+                                  }),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Current patch: ${_patchLabelForChannel(_selectedPianoChannel)}',
+                              style: const TextStyle(fontSize: 12, color: Colors.black54),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              height: 120,
+                              child: VirtualPiano(
+                                noteRange: const RangeValues(52, 71),
+                                onNotePressed: (note, pos) {
+                                  _onNoteDown(note);
+                                },
+                                onNoteReleased: (note) {
+                                  _onNoteUp(note);
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Channel Assignments Summary',
-                            style: TextStyle(fontWeight: FontWeight.w500),
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 16,
-                            runSpacing: 8,
-                            children: List.generate(16, (index) {
-                              final assignment = patchManager.getAssignment(index);
-                              final patchInfo = assignment.isAssigned
-                                  ? patchManager.bank?.getPatch(assignment.patchIndex)?.name ?? 'Unknown'
-                                  : 'Unassigned';
-                              return _buildChannelChip(
-                                index, // Pass 0-15 index, not midiChannel (1-16)
-                                patchInfo,
-                                assignment.isAssigned,
-                              );
-                            }),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Tap a channel to change its patch',
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
-                        ],
-                      ),
-                    ),
-                    spacerMedium,
-                    // Virtual piano (always uses channel 0 - MIDI chan 1)
-                    Text(
-                      'Virtual Piano (Channel 1)',
-                      style: textStyle.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    spacerSmall,
-                    Container(
-                      height: 120,
-                      decoration: BoxDecoration(
-                        color: Colors.orange[50],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: VirtualPiano(
-                        noteRange: const RangeValues(52, 71),
-                        onNotePressed: (note, pos) {
-                          _onNoteDown(note);
-                        },
-                        onNoteReleased: (note) {
-                          _onNoteUp(note);
-                        },
-                      ),
-                    ),
-                    spacerMedium,
-                    // Plugin status
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.blueAccent[100],
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          FutureBuilder<bool>(
-                            future: plugin.init(),
-                            builder: (
-                              BuildContext context,
-                              AsyncSnapshot<bool> value,
-                            ) {
-                              final displayValue = value.hasData
-                                  ? (value.data == true
-                                      ? 'active'
-                                      : 'failed')
-                                  : 'initializing...';
-                              return Text(
-                                'MSFA Engine: $displayValue',
+                      spacerMedium,
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blueAccent[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'MSFA Engine: $_engineStatus',
                                 style: textStyle,
-                                textAlign: TextAlign.center,
-                              );
-                            },
-                          ),
-                          const SizedBox(width: 16),
-                          MaterialButton(
-                            color: Colors.amberAccent,
-                            onPressed: () {
-                              log('shutdown engine');
-                              plugin.shutDown();
-                            },
-                            child: const Text('shutdown'),
-                          ),
-                        ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                plugin.shutDown();
+                                setState(() {
+                                  _engineReady = false;
+                                  _engineStatus = 'stopped';
+                                });
+                              },
+                              child: const Text('shutdown'),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
-        ),
-      );
+              );
+            },
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildChannelChip(int channelIndex, String patchName, bool isAssigned) {
-    final color = isAssigned
-        ? Colors.green[700]!
-        : Colors.grey[400]!;
-    final label = patchName.isNotEmpty ? patchName : 'CH ${channelIndex + 1}';
+    final color = isAssigned ? Colors.green[700]! : Colors.grey[400]!;
+    final label = isAssigned ? 'CH ${channelIndex + 1}: $patchName' : 'CH ${channelIndex + 1}: None';
     return GestureDetector(
       onTap: () => _showChannelAssignments(channel: channelIndex),
       child: Container(
@@ -353,13 +403,12 @@ class AppState extends State<App> {
           // No need to notify listeners; dialog handles its own state
         },
         onPreviewPatch: (patchIndex) {
-          // Preview the patch by temporarily assigning it to channel 0 and playing a note
           final originalPatch = patchManager.getPatchIndexForChannel(0);
           patchManager.assignPatch(0, patchIndex);
-          midiRouter.sendVirtualPianoNote(60, 87); // Middle C
-          
-          // Restore original after a short delay
+          midiRouter.sendVirtualPianoNote(60, 87, channel: 0);
+
           Future.delayed(const Duration(milliseconds: 500), () {
+            midiRouter.sendVirtualPianoNoteOff(60, channel: 0);
             patchManager.assignPatch(0, originalPatch);
           });
         },
@@ -368,13 +417,11 @@ class AppState extends State<App> {
   }
 
   void _onNoteDown(int note) {
-    // Virtual piano uses channel 0 (MIDI channel 1) and sends through the router
-    // to ensure the correct patch is loaded and program changes are sent
-    midiRouter.sendVirtualPianoNote(note, 87); // velocity 87 (0x57)
+    midiRouter.sendVirtualPianoNote(note, 87, channel: _selectedPianoChannel);
   }
 
   void _onNoteUp(int note) {
-    midiRouter.sendVirtualPianoNoteOff(note);
+    midiRouter.sendVirtualPianoNoteOff(note, channel: _selectedPianoChannel);
   }
 }
 

@@ -139,12 +139,16 @@ class MidiRouter {
     onSendRawMidi?.call(bankSelectLsb);
     _log('Bank Select LSB: channel=$channel, value=0');
 
-    // Send program change via the callback (for plugin integration)
-    onSendProgramChange?.call(channel, program);
+    // Use the dedicated callback when available so plugin integrations can
+    // route the change to a channel-local synth without echoing a duplicate.
+    if (onSendProgramChange != null) {
+      onSendProgramChange?.call(channel, program);
+    } else {
+      onSendRawMidi?.call(programChange);
+    }
     _currentPrograms[channel] = program;
 
     _log('Program Change: channel=$channel, program=$program');
-    onSendRawMidi?.call(programChange);
   }
 
   /// Ensure the correct patch is loaded for a channel
