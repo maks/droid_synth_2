@@ -29,7 +29,6 @@ class AppState extends State<App> {
   late final PatchManager patchManager;
 
   bool _engineReady = false;
-  String _engineStatus = 'initializing';
   int _selectedPianoChannel = 0;
 
   @override
@@ -77,15 +76,9 @@ class AppState extends State<App> {
 
       setState(() {
         _engineReady = true;
-        _engineStatus = 'active';
       });
     } catch (error, stackTrace) {
       log('App initialization failed: $error\n$stackTrace');
-      if (mounted) {
-        setState(() {
-          _engineStatus = 'failed';
-        });
-      }
       rethrow;
     }
   }
@@ -148,24 +141,85 @@ class AppState extends State<App> {
     return patchManager.bank?.getPatch(assignment.patchIndex)?.name ?? 'Patch ${assignment.patchIndex}';
   }
 
+  void _selectPianoChannel(int channel) {
+    if (_selectedPianoChannel == channel) {
+      return;
+    }
+    setState(() {
+      _selectedPianoChannel = channel;
+    });
+  }
+
+  Future<void> _showPatchPickerForChannel(int channel) async {
+    if (!patchManager.isBankLoaded || patchManager.bank == null) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Load a DX7 bank before assigning patches')),
+      );
+      return;
+    }
+
+    final selectedPatchIndex = await showModalBottomSheet<int?>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => _ChannelPatchPickerSheet(
+        channel: channel,
+        patchManager: patchManager,
+        currentPatchIndex: patchManager.getAssignment(channel).patchIndex,
+      ),
+    );
+
+    if (selectedPatchIndex == null) {
+      return;
+    }
+
+    patchManager.assignPatch(channel, selectedPatchIndex);
+  }
+
+  void _clearSelectedChannelAssignment() {
+    patchManager.unassignPatch(_selectedPianoChannel);
+  }
+
   @override
   Widget build(BuildContext context) {
-    const textStyle = TextStyle(fontSize: 14);
-    const spacerMedium = SizedBox(height: 20);
+    const spacerMedium = SizedBox(height: 16);
+    final bankStatusText = patchManager.isBankLoaded
+        ? '${patchManager.bank?.validPatches.length ?? 0} patches loaded'
+        : 'No bank loaded';
+    final bankSubtitle = patchManager.bankIdentifier;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Droid Synth'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Droid Synth'),
+            Text(
+              bankStatusText,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Colors.black54,
+                  ),
+            ),
+            if (bankSubtitle != null)
+              Text(
+                bankSubtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Colors.black45,
+                    ),
+              ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.storage),
             tooltip: 'Load DX7 Bank',
             onPressed: _showBankLoaderDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.list),
-            tooltip: 'Channel Assignments',
-            onPressed: _showChannelAssignments,
           ),
         ],
       ),
@@ -182,137 +236,73 @@ class AppState extends State<App> {
             animation: patchManager,
             builder: (context, _) {
               final assignedChannels = patchManager.assignments.where((assignment) => assignment.isAssigned).length;
+              final selectedPatchLabel = _patchLabelForChannel(_selectedPianoChannel);
 
-              return SingleChildScrollView(
-                child: Padding(
+              return Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text(
-                        'Multitimbral DX7 Synth',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      _buildChannelsCard(assignedChannels),
                       spacerMedium,
-                      Container(
-                        padding: const EdgeInsets.all(12),
+                      Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.blue[50],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.storage, color: Colors.blue),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    patchManager.isBankLoaded
-                                        ? '${patchManager.bank?.validPatches.length ?? 0} patches loaded'
-                                        : 'No bank loaded',
-                                    style: const TextStyle(fontWeight: FontWeight.w500),
-                                  ),
-                                  if (patchManager.bankIdentifier != null)
-                                    Text(
-                                      patchManager.bankIdentifier!,
-                                      style: const TextStyle(fontSize: 12, color: Colors.black54),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.refresh),
-                              tooltip: 'Load New Bank',
-                              onPressed: _showBankLoaderDialog,
-                            ),
-                          ],
-                        ),
-                      ),
-                      spacerMedium,
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.green[50],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Channel Assignments Summary ($assignedChannels/16)',
-                              style: const TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: List.generate(16, (index) {
-                                final assignment = patchManager.getAssignment(index);
-                                return _buildChannelChip(
-                                  index,
-                                  _patchLabelForChannel(index),
-                                  assignment.isAssigned,
-                                );
-                              }),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Tap a channel to change its patch',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
-                            ),
-                          ],
-                        ),
-                      ),
-                      spacerMedium,
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.orange[50],
-                          borderRadius: BorderRadius.circular(8),
+                          color: const Color(0xFFF6F4EF),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: const Color(0xFFE2DDD2)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
-                                const Expanded(
+                                Expanded(
                                   child: Text(
-                                    'Virtual Piano',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                    'Selected: CH ${_selectedPianoChannel + 1}',
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                   ),
                                 ),
-                                DropdownButton<int>(
-                                  value: _selectedPianoChannel,
-                                  onChanged: (value) {
-                                    if (value == null) {
-                                      return;
-                                    }
-                                    setState(() {
-                                      _selectedPianoChannel = value;
-                                    });
-                                  },
-                                  items: List.generate(16, (channel) {
-                                    return DropdownMenuItem<int>(
-                                      value: channel,
-                                      child: Text('CH ${channel + 1}'),
-                                    );
-                                  }),
+                                FilledButton.tonalIcon(
+                                  onPressed: () => _showPatchPickerForChannel(_selectedPianoChannel),
+                                  icon: const Icon(Icons.tune),
+                                  label: const Text('Change Patch'),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 4),
+                            const SizedBox(height: 6),
                             Text(
-                              'Current patch: ${_patchLabelForChannel(_selectedPianoChannel)}',
-                              style: const TextStyle(fontSize: 12, color: Colors.black54),
+                              selectedPatchLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                    color: const Color(0xFF5E5A51),
+                                  ),
                             ),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Tap a channel above to audition it on the keyboard.',
+                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                          color: const Color(0xFF6C675F),
+                                        ),
+                                  ),
+                                ),
+                                if (patchManager.getAssignment(_selectedPianoChannel).isAssigned)
+                                  TextButton(
+                                    onPressed: _clearSelectedChannelAssignment,
+                                    child: const Text('Clear'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
                             SizedBox(
-                              height: 120,
+                              height: 148,
                               child: VirtualPiano(
                                 noteRange: const RangeValues(52, 71),
                                 onNotePressed: (note, pos) {
@@ -326,36 +316,8 @@ class AppState extends State<App> {
                           ],
                         ),
                       ),
-                      spacerMedium,
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blueAccent[100],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'MSFA Engine: $_engineStatus',
-                                style: textStyle,
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                plugin.shutDown();
-                                setState(() {
-                                  _engineReady = false;
-                                  _engineStatus = 'stopped';
-                                });
-                              },
-                              child: const Text('shutdown'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -365,22 +327,118 @@ class AppState extends State<App> {
     );
   }
 
-  Widget _buildChannelChip(int channelIndex, String patchName, bool isAssigned) {
-    final color = isAssigned ? Colors.green[700]! : Colors.grey[400]!;
-    final label = isAssigned ? 'CH ${channelIndex + 1}: $patchName' : 'CH ${channelIndex + 1}: None';
-    return GestureDetector(
-      onTap: () => _showChannelAssignments(channel: channelIndex),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(color: color, fontSize: 12),
-          textAlign: TextAlign.center,
+  Widget _buildChannelsCard(int assignedChannels) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F7F4),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFD7E3DA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Channels',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '$assignedChannels of 16 assigned',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: const Color(0xFF5D6C61),
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: _showChannelAssignments,
+                icon: const Icon(Icons.view_list),
+                label: const Text('All Assignments'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _synthChannelCount,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 8,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1.9,
+            ),
+            itemBuilder: (context, index) {
+              return _buildChannelCard(index);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChannelCard(int channelIndex) {
+    final assignment = patchManager.getAssignment(channelIndex);
+    final isSelected = channelIndex == _selectedPianoChannel;
+    final isAssigned = assignment.isAssigned;
+    final patchLabel = _patchLabelForChannel(channelIndex);
+
+    final backgroundColor = isSelected
+        ? const Color(0xFFD9EEE3)
+        : isAssigned
+            ? Colors.white
+            : const Color(0xFFFAFAF8);
+    final borderColor = isSelected
+        ? const Color(0xFF2B6E4F)
+        : isAssigned
+            ? const Color(0xFFB9CDBF)
+            : const Color(0xFFD6D8D2);
+
+    return Material(
+      color: backgroundColor,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _selectPianoChannel(channelIndex),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor, width: isSelected ? 1.5 : 1),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'CH ${channelIndex + 1}',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF2A312C),
+                    ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                patchLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: isAssigned ? const Color(0xFF39423C) : const Color(0xFF7A807A),
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -394,6 +452,8 @@ class AppState extends State<App> {
   }
 
   void _showChannelAssignments({int? channel}) {
+    final previewChannel = channel ?? _selectedPianoChannel;
+
     showDialog(
       context: context,
       builder: (context) => ChannelAssignmentsDialog(
@@ -403,13 +463,13 @@ class AppState extends State<App> {
           // No need to notify listeners; dialog handles its own state
         },
         onPreviewPatch: (patchIndex) {
-          final originalPatch = patchManager.getPatchIndexForChannel(0);
-          patchManager.assignPatch(0, patchIndex);
-          midiRouter.sendVirtualPianoNote(60, 87, channel: 0);
+          final originalPatch = patchManager.getPatchIndexForChannel(previewChannel);
+          patchManager.assignPatch(previewChannel, patchIndex);
+          midiRouter.sendVirtualPianoNote(60, 87, channel: previewChannel);
 
           Future.delayed(const Duration(milliseconds: 500), () {
-            midiRouter.sendVirtualPianoNoteOff(60, channel: 0);
-            patchManager.assignPatch(0, originalPatch);
+            midiRouter.sendVirtualPianoNoteOff(60, channel: previewChannel);
+            patchManager.assignPatch(previewChannel, originalPatch);
           });
         },
       ),
@@ -422,6 +482,137 @@ class AppState extends State<App> {
 
   void _onNoteUp(int note) {
     midiRouter.sendVirtualPianoNoteOff(note, channel: _selectedPianoChannel);
+  }
+}
+
+class _ChannelPatchPickerSheet extends StatefulWidget {
+  final int channel;
+  final PatchManager patchManager;
+  final int currentPatchIndex;
+
+  const _ChannelPatchPickerSheet({
+    required this.channel,
+    required this.patchManager,
+    required this.currentPatchIndex,
+  });
+
+  @override
+  State<_ChannelPatchPickerSheet> createState() => _ChannelPatchPickerSheetState();
+}
+
+class _ChannelPatchPickerSheetState extends State<_ChannelPatchPickerSheet> {
+  late final TextEditingController _searchController;
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bank = widget.patchManager.bank;
+    final validPatches = bank?.validPatches ?? const <MapEntry<int, Dx7Patch>>[];
+    final normalizedQuery = _query.trim().toLowerCase();
+    final filteredPatches = validPatches.where((entry) {
+      if (normalizedQuery.isEmpty) {
+        return true;
+      }
+      final patchName = entry.value.name.toLowerCase();
+      return patchName.contains(normalizedQuery) || entry.key.toString().contains(normalizedQuery);
+    }).toList();
+
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 8,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        ),
+        child: SizedBox(
+          height: 520,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Assign Patch to CH ${widget.channel + 1}',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Select a patch for keyboard preview and channel playback.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: const Color(0xFF6C675F)),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _searchController,
+                onChanged: (value) {
+                  setState(() {
+                    _query = value;
+                  });
+                },
+                decoration: InputDecoration(
+                  hintText: 'Search by patch name or number',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() {
+                              _query = '';
+                            });
+                          },
+                          icon: const Icon(Icons.close),
+                        ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.volume_off_outlined),
+                title: const Text('Unassigned'),
+                subtitle: const Text('Mute this channel'),
+                trailing: widget.currentPatchIndex == -1 ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.of(context).pop(-1),
+              ),
+              const Divider(),
+              Expanded(
+                child: filteredPatches.isEmpty
+                    ? const Center(
+                        child: Text('No patches match this search'),
+                      )
+                    : ListView.builder(
+                        itemCount: filteredPatches.length,
+                        itemBuilder: (context, index) {
+                          final entry = filteredPatches[index];
+                          final isCurrent = entry.key == widget.currentPatchIndex;
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(entry.value.name),
+                            subtitle: Text('Patch ${entry.key}'),
+                            trailing: isCurrent ? const Icon(Icons.check) : null,
+                            onTap: () => Navigator.of(context).pop(entry.key),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -467,13 +658,13 @@ class _BankLoaderDialogState extends State<BankLoaderDialog> {
         if (mounted) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Bank loaded successfully')),
+            const SnackBar(content: Text('Bank loaded successfully')),
           );
         }
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to load bank')),
+            const SnackBar(content: Text('Failed to load bank')),
           );
         }
       }
@@ -513,9 +704,9 @@ class _BankLoaderDialogState extends State<BankLoaderDialog> {
               color: Colors.blue[50],
               child: Column(
                 children: [
-                  Text(
+                  const Text(
                     'Current Bank',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Text(
