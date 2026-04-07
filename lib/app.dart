@@ -317,12 +317,11 @@ class AppState extends State<App> {
                                   TextButton(
                                     onPressed: _clearSelectedChannelAssignment,
                                     child: const Text('Clear'),
-                                  ),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 16),
-                            SizedBox(
-                              height: 148,
+                            Expanded(
                               child: VirtualPiano(
                                 noteRange: const RangeValues(52, 71),
                                 onNotePressed: (note, pos) {
